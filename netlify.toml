@@ -2,6 +2,10 @@
   command = "npm run build"
   publish = "dist"
 
+[build.environment]
+  VITE_SUPABASE_URL = "https://otonwcoxabgnmdnflfpj.supabase.co"
+  VITE_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im90b253Y294YWJnbm1kbmZsZnBqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTQzNjI0NzQsImV4cCI6MjA2OTkzODQ3NH0.Dq_KJucjPcQybYiodiq-lV9NQCRc_5oMzUdx8UFoSEQ"
+
 [[redirects]]
   from = "/*"
   to = "/index.html"
@@ -11,3 +15,20 @@
   from = "/api/*"
   to = "/.netlify/functions/:splat"
   status = 200
+
+# Headers for better CORS handling
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-XSS-Protection = "1; mode=block"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+
+# Specific headers for API calls
+[[headers]]
+  for = "/api/*"
+  [headers.values]
+    Access-Control-Allow-Origin = "*"
+    Access-Control-Allow-Methods = "GET, POST, PUT, DELETE, OPTIONS"
+    Access-Control-Allow-Headers = "Content-Type, Authorization, apikey"

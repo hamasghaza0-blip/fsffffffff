@@ -1,19 +1,23 @@
 import { supabase } from './supabase';
+import { executeSupabaseQuery, handleSupabaseError } from './supabase';
 import { Reciter, Result } from '../types';
 
 // API للبحث عن القراء
 export const searchReciters = async (searchTerm: string): Promise<Reciter[]> => {
   try {
-    const { data, error } = await supabase
-      .from('reciters')
-      .select('*')
-      .ilike('name', `%${searchTerm}%`)
-      .order('name');
+    const { data, error } = await executeSupabaseQuery(async () => {
+      return await supabase!
+        .from('reciters')
+        .select('*')
+        .ilike('name', `%${searchTerm}%`)
+        .order('name');
+    });
 
     if (error) throw error;
     return data || [];
   } catch (error) {
-    console.error('Error searching reciters:', error);
+    const errorMessage = handleSupabaseError(error);
+    console.error('Error searching reciters:', errorMessage);
     return [];
   }
 };
@@ -28,21 +32,27 @@ export const getReciters = async (page: number = 1, limit: number = 50): Promise
     const from = (page - 1) * limit;
     const to = from + limit - 1;
 
-    const { data, error, count } = await supabase
-      .from('reciters')
-      .select('*', { count: 'exact' })
-      .range(from, to)
-      .order('name');
+    const { data: queryResult, error } = await executeSupabaseQuery(async () => {
+      return await supabase!
+        .from('reciters')
+        .select('*', { count: 'exact' })
+        .range(from, to)
+        .order('name');
+    });
 
     if (error) throw error;
+    
+    const data = (queryResult as any)?.data || [];
+    const count = (queryResult as any)?.count || 0;
 
     return {
-      data: data || [],
-      count: count || 0,
-      hasMore: (count || 0) > page * limit
+      data,
+      count,
+      hasMore: count > page * limit
     };
   } catch (error) {
-    console.error('Error fetching reciters:', error);
+    const errorMessage = handleSupabaseError(error);
+    console.error('Error fetching reciters:', errorMessage);
     return { data: [], count: 0, hasMore: false };
   }
 };
@@ -50,16 +60,19 @@ export const getReciters = async (page: number = 1, limit: number = 50): Promise
 // API لجلب القراء حسب الفئة
 export const getRecitersByCategory = async (category: string): Promise<Reciter[]> => {
   try {
-    const { data, error } = await supabase
-      .from('reciters')
-      .select('*')
-      .eq('category', category)
-      .order('name');
+    const { data, error } = await executeSupabaseQuery(async () => {
+      return await supabase!
+        .from('reciters')
+        .select('*')
+        .eq('category', category)
+        .order('name');
+    });
 
     if (error) throw error;
     return data || [];
   } catch (error) {
-    console.error('Error fetching reciters by category:', error);
+    const errorMessage = handleSupabaseError(error);
+    console.error('Error fetching reciters by category:', errorMessage);
     return [];
   }
 };

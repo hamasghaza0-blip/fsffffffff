@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Search, User, AlertTriangle } from 'lucide-react';
 import { Result } from '../types';
-import { supabase, isSupabaseConfigured, handleSupabaseError, testSupabaseConnection } from '../utils/supabase';
+import { supabase, isSupabaseConfigured, handleSupabaseError, testSupabaseConnection, executeSupabaseQuery } from '../utils/supabase';
 
 interface SearchSectionProps {
   onSearch: (result: Result | null) => void;
@@ -65,14 +65,6 @@ export default function SearchSection({ onSearch, isDarkMode = false }: SearchSe
   };
 
   const handleSearch = async () => {
-    // Test connection first
-    const connectionOk = await testSupabaseConnection();
-    if (!connectionOk) {
-      setSearchError('لا يمكن الاتصال بقاعدة البيانات. تحقق من اتصال الإنترنت.');
-      onSearch(null);
-      return;
-    }
-
     // التحقق من أن الاسم يحتوي على 3 أحرف على الأقل
     const searchWords = getSearchTerms(searchTerm);
     
@@ -92,22 +84,35 @@ export default function SearchSection({ onSearch, isDarkMode = false }: SearchSe
     setSearchError('');
     setIsLoading(true);
     
+    // Test connection first with enhanced error handling
+    console.log('Starting search process...');
+    const connectionOk = await testSupabaseConnection();
+    if (!connectionOk) {
+      setSearchError('لا يمكن الاتصال بقاعدة البيانات. تحقق من اتصال الإنترنت أو حاول مرة أخرى.');
+      onSearch(null);
+      setIsLoading(false);
+      return;
+    }
+    
     try {
       console.log('Searching for terms:', searchWords);
       
-      // البحث المتقدم: نبحث عن النتائج التي تحتوي على جميع الكلمات
-      let query = supabase.from('results').select('*');
-      
-      // إضافة شروط البحث لكل كلمة
-      searchWords.forEach((word, index) => {
-        if (index === 0) {
-          query = query.ilike('name', `%${word}%`);
-        } else {
-          query = query.ilike('name', `%${word}%`);
-        }
+      // استخدام executeSupabaseQuery مع retry logic
+      const { data, error } = await executeSupabaseQuery(async () => {
+        // البحث المتقدم: نبحث عن النتائج التي تحتوي على جميع الكلمات
+        let query = supabase!.from('results').select('*');
+        
+        // إضافة شروط البحث لكل كلمة
+        searchWords.forEach((word, index) => {
+          if (index === 0) {
+            query = query.ilike('name', `%${word}%`);
+          } else {
+            query = query.ilike('name', `%${word}%`);
+          }
+        });
+        
+        return await query.limit(10); // نأخذ أول 10 نتائج للمطابقة
       });
-      
-      const { data, error } = await query.limit(10); // نأخذ أول 10 نتائج للمطابقة
       
       if (error) {
         const errorMessage = handleSupabaseError(error);
@@ -153,32 +158,19 @@ export default function SearchSection({ onSearch, isDarkMode = false }: SearchSe
         });
         
         // حساب الترتيب داخل الفئة
-        const rank = await calculateRankInCategory(bestMatch.grade, bestMatch.category);
+        const { data: rankData } = await executeSupabaseQuery(async () => {
+          return await supabase!
+            .from('results')
+            .select('grade')
+            .eq('category', bestMatch.category)
+            .gt('grade', bestMatch.grade);
+        });
+        
+        const rank = (rankData?.length || 0) + 1;
         
         // تحويل بيانات Supabase إلى Result
         const result: Result = {
           id: bestMatch.no,
-          name: bestMatch.name,
-          category: bestMatch.category?.toString() || 'غير محدد',
-          grade: bestMatch.grade || 0,
-          rank: rank,
-          no: bestMatch.no
-        };
-        onSearch(result);
-      } else {
-        console.log('No results found');
-        onSearch(null);
-      }
-    } catch (error: any) {
-      const errorMessage = handleSupabaseError(error);
-      console.error('Search error:', errorMessage);
-      setSearchError(errorMessage);
-      onSearch(null);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
   const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
       handleSearch();

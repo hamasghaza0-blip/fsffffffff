@@ -1,7 +1,7 @@
 import React from 'react';
 import { Users, Trophy, TrendingUp, Award, Star } from 'lucide-react';
 import { ContestStats } from '../types';
-import { supabase } from '../utils/supabase';
+import { supabase, executeSupabaseQuery, handleSupabaseError, testSupabaseConnection } from '../utils/supabase';
 
 interface StatsSectionProps {
   isDarkMode?: boolean;
@@ -23,31 +23,41 @@ export const StatsSection: React.FC<StatsSectionProps> = ({ isDarkMode = false }
 
   const fetchStats = async () => {
     try {
-      // التحقق من وجود Supabase
-      if (!supabase) {
-        console.error('Supabase not configured');
+      console.log('Fetching stats...');
+      
+      // Test connection first
+      const connectionOk = await testSupabaseConnection();
+      if (!connectionOk) {
+        console.error('Cannot connect to database for stats');
         return;
       }
       
-      // جلب إحصائيات النتائج
-      const { data: resultsData, error: resultsError } = await supabase
-        .from('results')
-        .select('category, grade');
+      // جلب إحصائيات النتائج مع retry logic
+      const { data: resultsData, error: resultsError } = await executeSupabaseQuery(async () => {
+        return await supabase!
+          .from('results')
+          .select('category, grade');
+      });
 
       if (resultsError) {
-        console.error('Error fetching results stats:', resultsError);
+        const errorMessage = handleSupabaseError(resultsError);
+        console.error('Error fetching results stats:', errorMessage);
         return;
       }
 
-      // جلب إحصائيات المسجلين
-      const { count: totalRegistered, error: registeredError } = await supabase
-        .from('reciters')
-        .select('*', { count: 'exact', head: true });
+      // جلب إحصائيات المسجلين مع retry logic
+      const { data: registeredData, error: registeredError } = await executeSupabaseQuery(async () => {
+        return await supabase!
+          .from('reciters')
+          .select('*', { count: 'exact', head: true });
+      });
 
       if (registeredError) {
-        console.error('Error fetching registered stats:', registeredError);
+        const errorMessage = handleSupabaseError(registeredError);
+        console.error('Error fetching registered stats:', errorMessage);
       }
 
+      console.log('Stats fetched successfully');
       // حساب الإحصائيات
       const results = resultsData || [];
       const grades = results.map(r => r.grade).filter(g => g > 0);
@@ -60,14 +70,15 @@ export const StatsSection: React.FC<StatsSectionProps> = ({ isDarkMode = false }
       });
 
       setStats({
-        totalStudents: totalRegistered || 0,
+        totalStudents: (registeredData as any)?.count || 0,
         categories,
         averageGrade: grades.length > 0 ? Math.round(grades.reduce((sum, grade) => sum + grade, 0) / grades.length) : 0,
         topGrade: grades.length > 0 ? Math.max(...grades) : 0,
         categoriesCount
       });
     } catch (error) {
-      console.error('Error fetching stats:', error);
+      const errorMessage = handleSupabaseError(error);
+      console.error('Error fetching stats:', errorMessage);
     } finally {
       setIsLoading(false);
     }

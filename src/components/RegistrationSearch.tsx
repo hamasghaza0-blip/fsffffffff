@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Search, User, CheckCircle, XCircle, Calendar, Phone, UserCheck, Clock, AlertTriangle, GraduationCap } from 'lucide-react';
 import { Reciter } from '../types';
-import { supabase } from '../utils/supabase';
+import { supabase, executeSupabaseQuery, handleSupabaseError, testSupabaseConnection } from '../utils/supabase';
 
 interface RegistrationSearchProps {
   isDarkMode?: boolean;
@@ -51,22 +51,26 @@ export const RegistrationSearch: React.FC<RegistrationSearchProps> = ({ isDarkMo
 
   const fetchTotalStudents = async () => {
     try {
-      const { count, error } = await supabase
-        .from('reciters')
-        .select('*', { count: 'exact', head: true });
+      const { data: countData, error } = await executeSupabaseQuery(async () => {
+        return await supabase!
+          .from('reciters')
+          .select('*', { count: 'exact', head: true });
+      });
 
       if (error) {
         console.error('Error fetching total students:', error);
         return;
       }
 
-      setTotalStudents(count || 0);
+      setTotalStudents((countData as any)?.count || 0);
     } catch (error) {
       console.error('Error fetching total students:', error);
     }
   };
 
   const handleSearch = async () => {
+    console.log('Starting registration search...');
+    
     // التحقق من أن الاسم يحتوي على 3 أحرف على الأقل
     const searchWords = getSearchTerms(searchTerm);
     
@@ -89,37 +93,47 @@ export const RegistrationSearch: React.FC<RegistrationSearchProps> = ({ isDarkMo
     setIsLoading(true);
     setSearchAttempted(false); // تأخير إظهار النتيجة حتى انتهاء البحث
     
+    // Test connection first
+    const connectionOk = await testSupabaseConnection();
+    if (!connectionOk) {
+      setSearchError('لا يمكن الاتصال بقاعدة البيانات. تحقق من اتصال الإنترنت أو حاول مرة أخرى.');
+      setSearchResult(null);
+      setIsLoading(false);
+      setSearchAttempted(true);
+      return;
+    }
+    
     // إضافة تأخير أطول لضمان عدم إظهار النتيجة قبل انتهاء البحث
     await new Promise(resolve => setTimeout(resolve, 500));
 
     try {
-      // التحقق من وجود Supabase
-      if (!supabase) {
-        setSearchError('خدمة البحث غير متاحة حالياً');
-        setSearchResult(null);
-        return;
-      }
+      console.log('Executing registration search query...');
       
-      // البحث المتقدم: نبحث عن النتائج التي تحتوي على جميع الكلمات
-      let query = supabase.from('reciters').select('*');
-      
-      // إضافة شروط البحث لكل كلمة
-      searchWords.forEach((word, index) => {
-        if (index === 0) {
-          query = query.ilike('name', `%${word}%`);
-        } else {
-          query = query.ilike('name', `%${word}%`);
-        }
+      // استخدام executeSupabaseQuery مع retry logic
+      const { data, error } = await executeSupabaseQuery(async () => {
+        // البحث المتقدم: نبحث عن النتائج التي تحتوي على جميع الكلمات
+        let query = supabase!.from('reciters').select('*');
+        
+        // إضافة شروط البحث لكل كلمة
+        searchWords.forEach((word, index) => {
+          if (index === 0) {
+            query = query.ilike('name', `%${word}%`);
+          } else {
+            query = query.ilike('name', `%${word}%`);
+          }
+        });
+        
+        return await query.limit(10); // نأخذ أول 10 نتائج للمطابقة
       });
-      
-      const { data, error } = await query.limit(10); // نأخذ أول 10 نتائج للمطابقة
 
       if (error) {
-        console.error('Search error:', error);
+        const errorMessage = handleSupabaseError(error);
+        console.error('Registration search error:', errorMessage);
         setSearchResult(null);
-        setSearchError('حدث خطأ أثناء البحث');
+        setSearchError(errorMessage);
       } else {
         if (data && data.length > 0) {
+          console.log('Registration search results found:', data.length);
           // البحث عن أفضل مطابقة
           let bestMatch = data[0];
           let bestScore = 0;
@@ -154,13 +168,15 @@ export const RegistrationSearch: React.FC<RegistrationSearchProps> = ({ isDarkMo
           
           setSearchResult(bestMatch);
         } else {
+          console.log('No registration found');
           setSearchResult(null);
         }
       }
     } catch (error) {
-      console.error('Search error:', error);
+      const errorMessage = handleSupabaseError(error);
+      console.error('Registration search error:', errorMessage);
       setSearchResult(null);
-      setSearchError('حدث خطأ أثناء البحث');
+      setSearchError(errorMessage);
     } finally {
       setIsLoading(false);
       setSearchAttempted(true); // إظهار النتيجة فقط بعد انتهاء البحث

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Result } from '../types';
 import { ChevronDown, ChevronUp, List, Filter, Clock, Calendar, AlertCircle, Lock, X } from 'lucide-react';
 import { getCategoryColor, getGradeColor } from '../utils/contestStats';
-import { supabase, isSupabaseConfigured, handleSupabaseError, testSupabaseConnection } from '../utils/supabase';
+import { supabase, isSupabaseConfigured, handleSupabaseError, testSupabaseConnection, executeSupabaseQuery } from '../utils/supabase';
 
 interface AllResultsSectionProps {
   isDarkMode?: boolean;
@@ -55,36 +55,42 @@ export const AllResultsSection: React.FC<AllResultsSectionProps> = ({ isDarkMode
   
   // جلب النتائج من Supabase
   const fetchResults = async () => {
+    console.log('Fetching all results...');
+    setIsLoading(true);
+    
     // Test connection first
     const connectionOk = await testSupabaseConnection();
     if (!connectionOk) {
-      console.error('Cannot connect to database');
+      console.error('Cannot connect to database for all results');
       setResults([]);
+      setIsLoading(false);
       return;
     }
-
-    setIsLoading(true);
+    
     try {
-      const { data, error } = await supabase
-        .from('results')
-        .select('*')
-        .order('category', { ascending: true })
-        .order('grade', { ascending: false });
+      const { data, error } = await executeSupabaseQuery(async () => {
+        return await supabase!
+          .from('results')
+          .select('*')
+          .order('category', { ascending: true })
+          .order('grade', { ascending: false });
+      });
 
       if (error) {
         const errorMessage = handleSupabaseError(error);
-        console.error('Error fetching results:', errorMessage);
+        console.error('Error fetching all results:', errorMessage);
         setResults([]);
         return;
       }
 
+      console.log('All results fetched successfully:', data?.length || 0);
       // تحويل البيانات وحساب الترتيب داخل كل فئة
       const formattedResults = calculateRanksInCategories(data || []);
 
       setResults(formattedResults);
     } catch (error) {
       const errorMessage = handleSupabaseError(error);
-      console.error('Error fetching results:', errorMessage);
+      console.error('Error fetching all results:', errorMessage);
       setResults([]);
     } finally {
       setIsLoading(false);
